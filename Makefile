@@ -1,5 +1,5 @@
 P = ibp
-OBJECTS = demo.o
+OBJECTS = ibp.o
 CFLAGS = `pkg-config --cflags sdl2 SDL2_image` -Wall -g -std=c99
 CFLAGS += -Werror -Wfatal-errors
 CFLAGS += -fPIC
