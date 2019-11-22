@@ -10,7 +10,7 @@
 struct args {
         char **filenames;
         int filecount;
-        bool sort;
+        bool sort, debug;
 };
 
 struct imageinfo {
@@ -39,8 +39,11 @@ static void parse_args(int argc, char **argv, struct args *args)
 
         memset(args, 0, sizeof(*args));
 
-        while ((c = getopt(argc, argv, "hs")) != -1) {
+        while ((c = getopt(argc, argv, "dhs")) != -1) {
                 switch (c) {
+                case 'd':
+                        args->debug = true;
+                        break;
                 case 'h':
                         print_usage();
                         exit(0);
@@ -96,6 +99,7 @@ int main(int argc, char **argv)
 {
         struct args args;
         struct imageinfo *images;
+        int count = 0;
 
 
         parse_args(argc, argv, &args);
@@ -122,24 +126,27 @@ int main(int argc, char **argv)
                 SDL_Surface *image;
                 
                 if (! (image = IMG_Load(args.filenames[i]))) {
-                        printf("%s: %s\n", args.filenames[i],
-                               SDL_GetError());
-                        return -1;
+                        if (args.debug) {
+                                printf("%s: %s\n", args.filenames[i],
+                                       SDL_GetError());
+                        }
+                        continue;
                 }
 
-                images[i].image = image;
-                images[i].filename = args.filenames[i];
+                images[count].image = image;
+                images[count].filename = args.filenames[i];
+                count++;
         }
 
         if (args.sort) {
-                qsort(images, args.filecount, sizeof(images[0]), cmp_imageinfo);
+                qsort(images, count, sizeof(images[0]), cmp_imageinfo);
         }
         
         /* Print header */
         printf("%5s %5s %5s %s\n", "w", "h", "pitch", "name");
 
         /* Print image info for all images */
-        for (int i = 0; i < args.filecount; i++) {
+        for (int i = 0; i < count; i++) {
                 dump_imageinfo(&images[i]);
         }
 }
