@@ -1,19 +1,16 @@
-sources := 
-objects = $(sources:.c=.o)
+P = ibp
+OBJECTS = demo.o
+CFLAGS = `pkg-config --cflags sdl2 SDL2_image` -Wall -g -std=c99
 CFLAGS += -Werror -Wfatal-errors
-CFLAGS += -std=c99
 CFLAGS += -fPIC
+LDLIBS = `pkg-config --libs sdl2 SDL2_image`
 
 ifeq ($(OPTIMIZE), true)
-	CFLAGS += -O2
-else
-	CFLAGS += -Wall -g
+	CFLAGS += -O3
 endif
 
-all: demo
-
-demo: demo.o $(objects)
-	$(CC) $(CFLAGS) $< $(objects) $(LDFLAGS) -lSDL2 -lSDL2_image -o $@ -Wl,-rpath=/usr/local/lib
+$(P): $(OBJECTS)
+	$(CC) $(CFLAGS) $(LDFLAGS) $< -o $@ $(LDLIBS)
 
 clean:
-	rm -f *.o $(sdl2lib) $(isolib) demo
+	rm -f $(P) $(OBJECTS)
