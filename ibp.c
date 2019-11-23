@@ -13,8 +13,9 @@
 struct args {
         char **filenames;
         char *destdir;
-        int filecount;
+        Uint8 alpha;
         bool crop, debug, sort;
+        int filecount;
 };
 
 struct imageinfo {
@@ -30,7 +31,7 @@ static void print_usage(void)
 {
         printf("Usage:  ibp [options] <files>\n"
                "Options: \n"
-               "    -c: crop transparency\n"
+               "    -c <alpha>: crop out transparent pixels\n"
                "    -d: debug\n"
                "    -h:	help\n"
                "    -s: sort list output by image size\n"
@@ -49,10 +50,11 @@ static void parse_args(int argc, char **argv, struct args *args)
 
         memset(args, 0, sizeof(*args));
 
-        while ((c = getopt(argc, argv, "D:cdhs")) != -1) {
+        while ((c = getopt(argc, argv, "D:c:dhs")) != -1) {
                 switch (c) {
                 case 'c':
                         args->crop = true;
+                        args->alpha = atoi(optarg) & 0xff;
                         break;
                 case 'd':
                         args->debug = true;
@@ -153,13 +155,57 @@ static void normalize(struct imageinfo *info)
 
 /**
  * Crop off any transparency on the borders.
+ *
+ * Crop such that the image includes only pixels with an alpha > max_alpha
+ * (where 0 is transparent and 255 is opaque).
  */
-static void crop(struct imageinfo *info)
+static void crop(struct imageinfo *info, Uint8 max_alpha)
 {
-        /* Assert image has a supported format. */
+        /* Assert image has a supported format. This format was chosen because
+         * the pixels are a contiguous array of 32 bit values. */
         assert(info->image->format->format == SDL_PIXELFORMAT_ABGR8888);
+        assert(info->image->pitch == info->image->w * 4);
 
-        /* TODO */
+        int right = 0, left = info->image->w, bottom = 0, top = info->image->h;
+        Uint32 *pixel = info->image->pixels;
+        Uint32 amask = info->image->format->Amask;
+        Uint8 ashift = info->image->format->Ashift;
+
+        for (int y = 0; y < info->image->h; y++) {
+                for (int x = 0; x < info->image->w; x++) {
+                        Uint8 alpha = ((*pixel & amask) >> ashift);
+                        alpha = abs(alpha - SDL_ALPHA_TRANSPARENT);
+                        if (alpha > max_alpha) {
+                                if (x < left) {
+                                        left = x;
+                                }
+                                if (x > right) {
+                                        right = x;
+                                }
+                                if (y > bottom) {
+                                        bottom = y;
+                                }
+                                if (y < top) {
+                                        top = y;
+                                }
+                        }
+                        pixel++;
+                }
+        }
+
+        SDL_Rect clip = {left, top, right - left, bottom - top};
+        SDL_Surface *copy = SDL_CreateRGBSurfaceWithFormat(
+                0,  /* flags */
+                clip.w,  /* width */
+                clip.h,  /* height */
+                32,  /* depth */
+                info->image->format->format  /* format */
+                );
+
+        SDL_BlitSurface(info->image, &clip, copy, NULL);
+        SDL_FreeSurface(info->image);
+        info->image = copy;
+        info->size = copy->w * copy->h;
 }
 
 /**
@@ -238,7 +284,7 @@ int main(int argc, char **argv)
         if (args.crop) {
                 for (int i = 0; i < count; i++) {
                         normalize(&images[i]);
-                        crop(&images[i]);
+                        crop(&images[i], args.alpha);
                 }
         }
 
