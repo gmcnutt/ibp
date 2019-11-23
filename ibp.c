@@ -1,3 +1,4 @@
+#include <assert.h>
 #include <getopt.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -19,6 +20,7 @@ struct args {
 struct imageinfo {
         SDL_Surface *image;
         char *filename;
+        size_t size;
 };
 
 /**
@@ -97,30 +99,32 @@ static void parse_args(int argc, char **argv, struct args *args)
  *      0 if a == b
  *      1 if a > b
  */
-static int cmp_imageinfo(const void *pa, const void *pb)
+static int compare(const void *pa, const void *pb)
 {
         struct imageinfo *a = (struct imageinfo*)pa,
                 *b = (struct imageinfo*)pb;
-        return (a->image->w * a->image->h) - (b->image->w * b->image->h);
+        return a->size - b->size;
 }
 
 /**
  * Print info about image to stdout.
  */
-static void dump_imageinfo(struct imageinfo *info)
+static void dump(struct imageinfo *info)
 {
         SDL_PixelFormat *format = info->image->format;
+        const char *fmtname = SDL_GetPixelFormatName(format->format);
 
         /* Basic info */
         printf(
-                "%5d %5d %5d",
+                "%5d %5d %5d %10zu",
                 info->image->w,
                 info->image->h,
-                info->image->pitch
+                info->image->pitch,
+                info->size
                 );
 
         /* Pixel format info */
-        printf(" %28s", SDL_GetPixelFormatName(format->format));
+        printf(" %10s", &fmtname[16]);
 
 
         /* File info */
@@ -128,11 +132,34 @@ static void dump_imageinfo(struct imageinfo *info)
 }
 
 /**
+ * Convert the image to a supported format.
+ */
+static void normalize(struct imageinfo *info)
+{
+        if (info->image->format->format == SDL_PIXELFORMAT_ABGR8888) {
+                return;
+        }
+
+        SDL_Surface *original = info->image;
+        info->image = SDL_ConvertSurfaceFormat(
+                original,
+                SDL_PIXELFORMAT_ABGR8888,
+                0
+                );
+        assert(info->image);
+
+        SDL_FreeSurface(original);
+}
+
+/**
  * Crop off any transparency on the borders.
  */
-static SDL_Surface *crop(SDL_Surface *image)
+static void crop(struct imageinfo *info)
 {
-        return image; /* TODO */
+        /* Assert image has a supported format. */
+        assert(info->image->format->format == SDL_PIXELFORMAT_ABGR8888);
+
+        /* TODO */
 }
 
 /**
@@ -153,10 +180,11 @@ static void save(struct imageinfo *info, const char *destdir)
                 *last = '\0';
         }
 
-        /* Build a new path to the dest dir. */
-        filename = str_printf("%s/%s.png", destdir, filename);
-        IMG_SavePNG(info->image, filename);
-        str_deref(filename);
+        /* Build a new path to the dest dir. Note that I am not freeing the
+         * original info->filename because it is probably from the argv
+         * vector. */
+        info->filename = str_printf("%s/%s.png", destdir, filename);
+        IMG_SavePNG(info->image, info->filename);
 
         if (last) {
                 *last = '.';
@@ -203,12 +231,14 @@ int main(int argc, char **argv)
 
                 images[count].image = image;
                 images[count].filename = args.filenames[i];
+                images[count].size = image->w * image->h;
                 count++;
         }
 
         if (args.crop) {
                 for (int i = 0; i < count; i++) {
-                        crop(images[i].image);
+                        normalize(&images[i]);
+                        crop(&images[i]);
                 }
         }
 
@@ -219,21 +249,22 @@ int main(int argc, char **argv)
         }
 
         if (args.sort) {
-                qsort(images, count, sizeof(images[0]), cmp_imageinfo);
+                qsort(images, count, sizeof(images[0]), compare);
         }
 
         /* Print header */
         printf(
-                "%5s %5s %5s %28s %s\n",
+                "%5s %5s %5s %10s %10s %s\n",
                 "w",
                 "h",
                 "pitch",
+                "size",
                 "pixfmt",
                 "name"
                 );
 
         /* Print image info for all images */
         for (int i = 0; i < count; i++) {
-                dump_imageinfo(&images[i]);
+                dump(&images[i]);
         }
 }
